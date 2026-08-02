@@ -21,13 +21,13 @@ OUT_JSON = sys.argv[2] if len(sys.argv) > 2 else "ecowitt_wide.json"
 long_df = pd.read_csv(IN_CSV)
 
 wide_df = long_df.pivot_table(
-    index="Tidsstämpel",
-    columns="mätvärde",
-    values="värde",
+    index="timestamp",
+    columns="metric",
+    values="value",
     aggfunc="first",  # varje (tidsstämpel, mätvärde) ska bara finnas en gång
 ).reset_index()
 
-wide_df = wide_df.sort_values("Tidsstämpel")
+wide_df = wide_df.sort_values("timestamp")
 
 wide_df.to_json(OUT_JSON, orient="records", indent=2, force_ascii=False)
 
@@ -37,5 +37,5 @@ print(f"Klart! {len(wide_df)} rader, {len(wide_df.columns) - 1} mätvärden -> {
 # ---------------------------------------------------------------------
 # import pandas as pd
 # df = pd.read_json("ecowitt_wide.json")
-# df["Tidsstämpel"] = pd.to_datetime(df["Tidsstämpel"])
-# df.set_index("Tidsstämpel", inplace=True)
+# df["timestamp"] = pd.to_datetime(df["timestamp"])
+# df.set_index("timestamp", inplace=True)

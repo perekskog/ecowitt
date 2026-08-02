@@ -17,7 +17,7 @@ if ! ls "$RAWDIR"/*.json >/dev/null 2>&1; then
 fi
 
 jq -rs '
-  ["Tidsstämpel","mätvärde","värde"],
+  ["timestamp","metric","value"],
   ( [ .[] as $resp
       | $resp.data
       | to_entries[] as $grp
