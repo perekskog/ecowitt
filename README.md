@@ -22,8 +22,8 @@ requirements evolve).
 3. Before running any script, export the values from `.env`:
    `set -a; source .env; set +a`
 4. Install [uv](https://docs.astral.sh/uv/) if it is not already installed.
-   `uv` creates and manages the project environment and installs pandas
-   from `pyproject.toml` automatically on first run.
+   `uv` creates and manages the project environment and installs the
+   dependencies from `pyproject.toml` automatically on first run.
 
 ## Usage
 
@@ -36,6 +36,14 @@ uv run python fetch_stations.py 2026-05-01 2026-07-31 5min
 
 Dates may be given as `YYYY-MM-DD` (the full day is included) or as
 `"YYYY-MM-DD HH:MM:SS"` for a specific time range.
+
+### Notebook: daily temperature range
+
+Open [g3000_daily_temperature.ipynb](g3000_daily_temperature.ipynb) in VS Code
+and select the `ecowitt` (`.venv`) Python kernel. The notebook plots daily
+minimum and maximum outdoor temperatures from the G3000 wide JSON file.
+Notebook support is included in the uv development dependencies; if needed,
+sync the environment with `uv sync --group dev`.
 
 ### Call the history API directly with curl
 
