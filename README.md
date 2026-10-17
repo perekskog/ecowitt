@@ -37,17 +37,29 @@ uv run python fetch_stations.py 2026-05-01 2026-07-31 5min
 Dates may be given as `YYYY-MM-DD` (the full day is included) or as
 `"YYYY-MM-DD HH:MM:SS"` for a specific time range.
 
+By default, both stations are fetched. To fetch only one, add `--station` with
+one of the short names `easyweather` or `gw3000`, or provide a unique part of
+the full station name. Matching is case-insensitive. For example:
+
+```bash
+uv run python fetch_stations.py 2026-05-01 2026-07-31 5min --station gw3000
+```
+
+If the text matches both stations or neither, the command reports the problem
+instead of selecting one.
+
 To rebuild the CSV and wide JSON exports from downloaded raw files, without
 calling the API, run:
 
 ```bash
-uv run python fetch_stations.py process data --station GW3000A-WIFI1573
+uv run python fetch_stations.py process data --station gw3000
 ```
 
 This regenerates both the long CSV and wide JSON from that station's `raw/`
 files. Any manual edits to the generated CSV will be overwritten; edit the raw
 JSON if you want those changes preserved when processing again. Omit
-`--station GW3000A-WIFI1573` to process both stations.
+`--station gw3000` to process both stations. The same station matching rules
+apply to fetching and processing.
 
 ### File creation and manual edits
 
@@ -82,6 +94,17 @@ and select the `ecowitt` (`.venv`) Python kernel. The notebook plots daily
 minimum and maximum outdoor temperatures from the G3000 wide JSON file.
 Notebook support is included in the uv development dependencies; if needed,
 sync the environment with `uv sync --group dev`.
+
+You can also run the notebook outside VS Code in JupyterLab. From the project
+folder, run:
+
+```bash
+uv run --with jupyterlab jupyter lab g3000_daily_temperature.ipynb
+```
+
+This runs JupyterLab with the project's uv environment without adding
+JupyterLab to the project dependencies. Stop the local server with `Ctrl+C`
+in the terminal when finished.
 
 ### Call the history API directly with curl
 

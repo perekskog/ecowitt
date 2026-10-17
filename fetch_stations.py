@@ -29,6 +29,7 @@ REQUEST_INTERVAL_SECONDS = 1.1
 @dataclass(frozen=True)
 class Station:
     name: str
+    short_name: str
     mac_env: str
     callback_env: str
 
@@ -36,11 +37,13 @@ class Station:
 STATIONS = (
     Station(
         "EasyWeatherPro-4F447C",
+        "easyweather",
         "ECOWITT_EASYWEATHERPRO_4F447C_MAC",
         "ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK",
     ),
     Station(
         "GW3000A-WIFI1573",
+        "gw3000",
         "ECOWITT_GW3000A_WIFI1573_MAC",
         "ECOWITT_GW3000A_WIFI1573_CALL_BACK",
     ),
@@ -288,12 +291,33 @@ def write_station_outputs(station_dir: Path, station_name: str) -> None:
     print(f"Skrev {len(records)} mätpunkter -> {long_csv_path}")
 
 
-def process_station_outputs(output_dir: Path, station_name: str | None) -> None:
-    stations = (
-        [station for station in STATIONS if station.name == station_name]
-        if station_name
-        else STATIONS
+def select_stations(query: str | None) -> tuple[Station, ...]:
+    if query is None:
+        return STATIONS
+
+    normalized_query = query.casefold()
+    matches = tuple(
+        station
+        for station in STATIONS
+        if normalized_query in station.name.casefold()
+        or normalized_query in station.short_name.casefold()
     )
+    if not matches:
+        available = ", ".join(station.short_name for station in STATIONS)
+        raise ValueError(
+            f"Ingen station matchar {query!r}. Tillgängliga kortnamn: {available}."
+        )
+    if len(matches) > 1:
+        available = ", ".join(station.short_name for station in matches)
+        raise ValueError(
+            f"Station {query!r} är tvetydig; matchar {available}. "
+            "Ange ett mer specifikt namn."
+        )
+    return matches
+
+
+def process_station_outputs(output_dir: Path, station_query: str | None) -> None:
+    stations = select_stations(station_query)
     for station in stations:
         print(f"Bearbetar stationen {station.name} ...")
         station_dir = output_dir / station.name
@@ -321,6 +345,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     fetch_parser.add_argument("cycle_type", choices=CHUNK_DAYS)
     fetch_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
+    fetch_parser.add_argument(
+        "--station",
+        help="Hämta bara en station; kortnamn: easyweather eller gw3000.",
+    )
 
     process_parser = commands.add_parser(
         "process", help="Bygg exportfiler från redan hämtade raw JSON-filer."
@@ -328,8 +356,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     process_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
     process_parser.add_argument(
         "--station",
-        choices=[station.name for station in STATIONS],
-        help="Bearbeta bara den angivna stationen (standard: båda).",
+        help="Bearbeta bara en station; kortnamn: easyweather eller gw3000.",
     )
     return parser.parse_args(argv)
 
@@ -351,7 +378,7 @@ def main() -> int:
         api_key = required_environment("ECOWITT_API_KEY")
         output_dir = Path(args.output_dir)
 
-        for station in STATIONS:
+        for station in select_stations(args.station):
             print(f"Bearbetar stationen {station.name} ...")
             station_dir = output_dir / station.name
             fetch_station_history(

@@ -12,6 +12,7 @@ from fetch_stations import (
     parse_datetime,
     parse_args,
     process_station_outputs,
+    select_stations,
     save_raw_response,
     write_station_outputs,
 )
@@ -164,25 +165,52 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.command, "fetch")
         self.assertEqual(args.output_dir, "data")
 
-    def test_process_command_accepts_output_directory_and_station(self):
+    def test_fetch_command_accepts_short_station_name(self):
         args = parse_args(
-            ["process", "data", "--station", "GW3000A-WIFI1573"]
+            [
+                "fetch",
+                "2026-10-01",
+                "2026-10-02",
+                "5min",
+                "data",
+                "--station",
+                "gw3000",
+            ]
         )
+
+        self.assertEqual(args.command, "fetch")
+        self.assertEqual(args.station, "gw3000")
+
+    def test_process_command_accepts_output_directory_and_station(self):
+        args = parse_args(["process", "data", "--station", "gw3000"])
 
         self.assertEqual(args.command, "process")
         self.assertEqual(args.output_dir, "data")
-        self.assertEqual(args.station, "GW3000A-WIFI1573")
+        self.assertEqual(args.station, "gw3000")
 
     @patch("fetch_stations.write_station_outputs")
     def test_processes_only_selected_station_without_fetching(
         self, write_outputs
     ):
-        process_station_outputs(Path("data"), "GW3000A-WIFI1573")
+        process_station_outputs(Path("data"), "gw3000")
 
         write_outputs.assert_called_once_with(
             Path("data/GW3000A-WIFI1573"),
             "GW3000A-WIFI1573",
         )
+
+    def test_station_selection_accepts_case_insensitive_partial_name(self):
+        stations = select_stations("EASY")
+
+        self.assertEqual([station.short_name for station in stations], ["easyweather"])
+
+    def test_ambiguous_station_selection_is_reported(self):
+        with self.assertRaisesRegex(ValueError, "tvetydig"):
+            select_stations("a")
+
+    def test_unknown_station_selection_is_reported(self):
+        with self.assertRaisesRegex(ValueError, "Ingen station matchar"):
+            select_stations("unknown")
 
 
 if __name__ == "__main__":
