@@ -37,6 +37,44 @@ uv run python fetch_stations.py 2026-05-01 2026-07-31 5min
 Dates may be given as `YYYY-MM-DD` (the full day is included) or as
 `"YYYY-MM-DD HH:MM:SS"` for a specific time range.
 
+To rebuild the CSV and wide JSON exports from downloaded raw files, without
+calling the API, run:
+
+```bash
+uv run python fetch_stations.py process data --station GW3000A-WIFI1573
+```
+
+This regenerates both the long CSV and wide JSON from that station's `raw/`
+files. Any manual edits to the generated CSV will be overwritten; edit the raw
+JSON if you want those changes preserved when processing again. Omit
+`--station GW3000A-WIFI1573` to process both stations.
+
+### File creation and manual edits
+
+Each station has its own directory. The pipeline creates or updates files in
+this order:
+
+1. **Raw API JSON** — one file per requested time chunk, for example
+   `data/GW3000A-WIFI1573/raw/5min_2026-09-10.json`. These contain the API
+   response and are the source used to rebuild the exports. When fetching
+   again, an existing raw chunk is skipped rather than downloaded again.
+2. **Long CSV** — `ecowitt_GW3000A-WIFI1573_long.csv`, with one row per
+   timestamp and metric (`timestamp,metric,value`). Raw JSON files are read,
+   flattened, and sorted by timestamp to create this file.
+3. **Wide JSON** — `ecowitt_GW3000A-WIFI1573_wide.json`, with one row per
+   timestamp and a separate column for each metric. It is built from the long
+   CSV; API `-` placeholders become missing values (`null`) here.
+
+The same sequence applies to `EasyWeatherPro-4F447C`. Fetching data writes
+new raw chunks first, then rebuilds the long CSV and wide JSON from all raw
+chunks in that station's directory. The `process` command skips the API step
+and rebuilds the two derived files from the raw JSON files already there.
+
+For a manual correction that should survive reprocessing, edit the relevant
+raw JSON and then run `process`. Editing the generated long CSV or wide JSON
+directly is useful for a one-off analysis, but those edits are replaced the
+next time the exports are rebuilt.
+
 ### Notebook: daily temperature range
 
 Open [g3000_daily_temperature.ipynb](g3000_daily_temperature.ipynb) in VS Code
@@ -82,6 +120,27 @@ API callback groups. Run `uv run python fetch_stations.py --help` for CLI
 options. See [docs/description.md](docs/description.md) for details.
 
 Run the focused tests with `uv run python -m unittest discover -s tests`.
+
+## To do
+
+- Evaluate adding a derived combined series that fills missing shared
+  measurements from the other station (for example, outdoor readings missing
+  from one station while present on the other). Preserve both original station
+  datasets, and define how to handle timestamp alignment and metric-specific
+  differences before applying any fallback.
+
+  Example from 2026-09-10: the GW3000 has missing outdoor temperature and
+  humidity from 20:50 through 21:05, while EasyWeatherPro has readings:
+
+  | Time | EasyWeatherPro temperature | GW3000 temperature | EasyWeatherPro humidity | GW3000 humidity |
+  | --- | ---: | ---: | ---: | ---: |
+  | 20:50 | 10.0°C | missing (`-`) | 92% | missing (`-`) |
+  | 20:55 | 10.0°C | missing (`-`) | 92% | missing (`-`) |
+  | 21:00 | 9.8°C | missing (`-`) | 93% | missing (`-`) |
+  | 21:05 | 9.7°C | missing (`-`) | 93% | missing (`-`) |
+
+  This is a case where a derived series could use the other station as a
+  fallback without changing either station's original values.
 
 ## Other files
 

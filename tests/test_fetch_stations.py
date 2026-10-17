@@ -3,12 +3,15 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from fetch_stations import (
     build_request_url,
     flatten_raw_files,
     iter_chunks,
     parse_datetime,
+    parse_args,
+    process_station_outputs,
     save_raw_response,
     write_station_outputs,
 )
@@ -123,8 +126,16 @@ class FlatteningTests(unittest.TestCase):
             "code": 0,
             "data": {
                 "outdoor": {
-                    "temperature": {"list": {"1792195200": "12.1"}}
-                }
+                    "temperature": {
+                        "list": {
+                            "1792195200": "12.1",
+                            "1792195500": "-",
+                        }
+                    }
+                },
+                "solar_and_uvi": {
+                    "solar": {"list": {"1792195500": "500"}}
+                },
             },
         }
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -140,8 +151,38 @@ class FlatteningTests(unittest.TestCase):
             long_csv = station_dir / "ecowitt_test-station_long.csv"
             wide_json = station_dir / "ecowitt_test-station_wide.json"
             self.assertIn("outdoor_temperature", long_csv.read_text(encoding="utf-8"))
-            row = json.loads(wide_json.read_text(encoding="utf-8"))[0]
-            self.assertEqual(row["outdoor_temperature"], 12.1)
+            rows = json.loads(wide_json.read_text(encoding="utf-8"))
+            self.assertEqual(rows[0]["outdoor_temperature"], 12.1)
+            self.assertIsNone(rows[1]["outdoor_temperature"])
+            self.assertEqual(rows[1]["solar_and_uvi_solar"], 500)
+
+
+class CliTests(unittest.TestCase):
+    def test_legacy_fetch_arguments_remain_supported(self):
+        args = parse_args(["2026-10-01", "2026-10-02", "5min", "data"])
+
+        self.assertEqual(args.command, "fetch")
+        self.assertEqual(args.output_dir, "data")
+
+    def test_process_command_accepts_output_directory_and_station(self):
+        args = parse_args(
+            ["process", "data", "--station", "GW3000A-WIFI1573"]
+        )
+
+        self.assertEqual(args.command, "process")
+        self.assertEqual(args.output_dir, "data")
+        self.assertEqual(args.station, "GW3000A-WIFI1573")
+
+    @patch("fetch_stations.write_station_outputs")
+    def test_processes_only_selected_station_without_fetching(
+        self, write_outputs
+    ):
+        process_station_outputs(Path("data"), "GW3000A-WIFI1573")
+
+        write_outputs.assert_called_once_with(
+            Path("data/GW3000A-WIFI1573"),
+            "GW3000A-WIFI1573",
+        )
 
 
 if __name__ == "__main__":

@@ -253,7 +253,11 @@ def write_station_outputs(station_dir: Path, station_name: str) -> None:
             )
 
     if records:
-        long_df = pd.read_csv(long_csv_path)
+        long_df = pd.read_csv(long_csv_path, dtype={"value": "string"})
+        long_df["value"] = pd.to_numeric(
+            long_df["value"].replace("-", pd.NA),
+            errors="raise",
+        )
         wide_df = (
             long_df.pivot_table(
                 index="timestamp",
@@ -284,20 +288,59 @@ def write_station_outputs(station_dir: Path, station_name: str) -> None:
     print(f"Skrev {len(records)} mätpunkter -> {long_csv_path}")
 
 
-def parse_args() -> argparse.Namespace:
+def process_station_outputs(output_dir: Path, station_name: str | None) -> None:
+    stations = (
+        [station for station in STATIONS if station.name == station_name]
+        if station_name
+        else STATIONS
+    )
+    for station in stations:
+        print(f"Bearbetar stationen {station.name} ...")
+        station_dir = output_dir / station.name
+        write_station_outputs(station_dir, station.name)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] not in {"fetch", "process", "-h", "--help"}:
+        argv.insert(0, "fetch")
+
     parser = argparse.ArgumentParser(
         description="Hämta och bearbeta Ecowitt-data separat per station."
     )
-    parser.add_argument("start_date", help="YYYY-MM-DD eller YYYY-MM-DD HH:MM:SS")
-    parser.add_argument("end_date", help="YYYY-MM-DD eller YYYY-MM-DD HH:MM:SS")
-    parser.add_argument("cycle_type", choices=CHUNK_DAYS)
-    parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
-    return parser.parse_args()
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    fetch_parser = commands.add_parser(
+        "fetch", help="Hämta data och bygg stationernas exportfiler."
+    )
+    fetch_parser.add_argument(
+        "start_date", help="YYYY-MM-DD eller YYYY-MM-DD HH:MM:SS"
+    )
+    fetch_parser.add_argument(
+        "end_date", help="YYYY-MM-DD eller YYYY-MM-DD HH:MM:SS"
+    )
+    fetch_parser.add_argument("cycle_type", choices=CHUNK_DAYS)
+    fetch_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
+
+    process_parser = commands.add_parser(
+        "process", help="Bygg exportfiler från redan hämtade raw JSON-filer."
+    )
+    process_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
+    process_parser.add_argument(
+        "--station",
+        choices=[station.name for station in STATIONS],
+        help="Bearbeta bara den angivna stationen (standard: båda).",
+    )
+    return parser.parse_args(argv)
 
 
 def main() -> int:
     args = parse_args()
     try:
+        if args.command == "process":
+            process_station_outputs(Path(args.output_dir), args.station)
+            return 0
+
         start = parse_datetime(args.start_date)
         end = parse_datetime(args.end_date, end_of_day=True)
         if end < start:
