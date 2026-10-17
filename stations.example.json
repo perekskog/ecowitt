@@ -1,0 +1,16 @@
+{
+  "stations": [
+    {
+      "name": "EasyWeatherPro-4F447C",
+      "short_name": "easyweather",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "call_back": "outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure"
+    },
+    {
+      "name": "GW3000A-WIFI1573",
+      "short_name": "gw3000",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "call_back": "outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure"
+    }
+  ]
+}

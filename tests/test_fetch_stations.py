@@ -11,6 +11,7 @@ from fetch_stations import (
     iter_chunks,
     parse_datetime,
     parse_args,
+    load_stations,
     process_station_outputs,
     select_stations,
     save_raw_response,
@@ -89,6 +90,47 @@ class ApiHelpersTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "API rapporterade fel"):
                 save_raw_response(raw_path, '{"code":1,"msg":"bad request"}')
             self.assertFalse(raw_path.exists())
+
+
+class StationConfigTests(unittest.TestCase):
+    def test_loads_station_names_aliases_and_optional_callback(self):
+        config = {
+            "stations": [
+                {
+                    "name": "Weather Station",
+                    "short_name": "weather",
+                    "mac": "AA:BB:CC:DD:EE:FF",
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "stations.json"
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            stations = load_stations(config_path)
+
+        self.assertEqual(len(stations), 1)
+        self.assertEqual(stations[0].name, "Weather Station")
+        self.assertEqual(stations[0].short_name, "weather")
+        self.assertEqual(stations[0].mac, "AA:BB:CC:DD:EE:FF")
+        self.assertEqual(
+            stations[0].callback,
+            "outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure",
+        )
+
+    def test_rejects_duplicate_station_names(self):
+        station = {
+            "name": "Station",
+            "short_name": "one",
+            "mac": "AA:BB:CC:DD:EE:FF",
+        }
+        config = {"stations": [station, {**station, "short_name": "two"}]}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "stations.json"
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "måste vara unika"):
+                load_stations(config_path)
 
 
 class FlatteningTests(unittest.TestCase):
@@ -187,12 +229,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.command, "process")
         self.assertEqual(args.output_dir, "data")
         self.assertEqual(args.station, "gw3000")
+        self.assertEqual(args.config, "stations.json")
 
     @patch("fetch_stations.write_station_outputs")
     def test_processes_only_selected_station_without_fetching(
         self, write_outputs
     ):
-        process_station_outputs(Path("data"), "gw3000")
+        stations = (
+            load_stations(
+                Path(__file__).resolve().parents[1] / "stations.example.json"
+            )
+        )
+        process_station_outputs(Path("data"), "gw3000", stations)
 
         write_outputs.assert_called_once_with(
             Path("data/GW3000A-WIFI1573"),
@@ -200,17 +248,26 @@ class CliTests(unittest.TestCase):
         )
 
     def test_station_selection_accepts_case_insensitive_partial_name(self):
-        stations = select_stations("EASY")
+        configured = load_stations(
+            Path(__file__).resolve().parents[1] / "stations.example.json"
+        )
+        stations = select_stations("EASY", configured)
 
         self.assertEqual([station.short_name for station in stations], ["easyweather"])
 
     def test_ambiguous_station_selection_is_reported(self):
+        configured = load_stations(
+            Path(__file__).resolve().parents[1] / "stations.example.json"
+        )
         with self.assertRaisesRegex(ValueError, "tvetydig"):
-            select_stations("a")
+            select_stations("a", configured)
 
     def test_unknown_station_selection_is_reported(self):
+        configured = load_stations(
+            Path(__file__).resolve().parents[1] / "stations.example.json"
+        )
         with self.assertRaisesRegex(ValueError, "Ingen station matchar"):
-            select_stations("unknown")
+            select_stations("unknown", configured)
 
 
 if __name__ == "__main__":

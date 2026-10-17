@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch Ecowitt history and write station-specific raw JSON, CSV, and JSON."""
+"""Fetch Ecowitt history or process saved station-specific raw JSON files."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ import pandas as pd
 
 API_URL = "https://api.ecowitt.net/api/v3/device/history"
 DEFAULT_CALLBACK = "outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure"
+DEFAULT_STATION_CONFIG = "stations.json"
 CHUNK_DAYS = {"5min": 1, "30min": 7, "4hour": 30, "1day": 365}
 REQUEST_INTERVAL_SECONDS = 1.1
 
@@ -30,24 +31,8 @@ REQUEST_INTERVAL_SECONDS = 1.1
 class Station:
     name: str
     short_name: str
-    mac_env: str
-    callback_env: str
-
-
-STATIONS = (
-    Station(
-        "EasyWeatherPro-4F447C",
-        "easyweather",
-        "ECOWITT_EASYWEATHERPRO_4F447C_MAC",
-        "ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK",
-    ),
-    Station(
-        "GW3000A-WIFI1573",
-        "gw3000",
-        "ECOWITT_GW3000A_WIFI1573_MAC",
-        "ECOWITT_GW3000A_WIFI1573_CALL_BACK",
-    ),
-)
+    mac: str
+    callback: str = DEFAULT_CALLBACK
 
 
 def parse_datetime(value: str, *, end_of_day: bool = False) -> datetime:
@@ -90,6 +75,69 @@ def required_environment(name: str) -> str:
     if not value:
         raise RuntimeError(f"Miljövariabeln {name} saknas eller är tom.")
     return value
+
+
+def load_stations(config_path: Path) -> tuple[Station, ...]:
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RuntimeError(
+            f"Kunde inte läsa stationskonfigurationen {config_path}. "
+            "Kopiera stations.example.json till stations.json och fyll i stationerna."
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Ogiltig JSON i stationskonfigurationen {config_path}: {exc}"
+        ) from exc
+
+    if not isinstance(config, dict) or not isinstance(config.get("stations"), list):
+        raise RuntimeError(
+            f"{config_path} måste innehålla en JSON-lista med nyckeln 'stations'."
+        )
+    if not config["stations"]:
+        raise RuntimeError(f"Stationslistan i {config_path} får inte vara tom.")
+
+    stations: list[Station] = []
+    for index, item in enumerate(config["stations"], start=1):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"Station {index} i {config_path} måste vara ett objekt.")
+        name = item.get("name")
+        short_name = item.get("short_name")
+        mac = item.get("mac")
+        callback = item.get("call_back", DEFAULT_CALLBACK)
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (name, short_name, mac)
+        ):
+            raise RuntimeError(
+                f"Station {index} i {config_path} måste ha icke-tomma "
+                "'name', 'short_name' och 'mac'."
+            )
+        if (
+            Path(name).name != name
+            or "/" in name
+            or "\\" in name
+            or name in {".", ".."}
+        ):
+            raise RuntimeError(
+                f"Ogiltigt stationsnamn {name!r} i {config_path}; "
+                "namnet används som katalognamn."
+            )
+        if not isinstance(callback, str) or not callback.strip():
+            raise RuntimeError(
+                f"'call_back' för station {name!r} måste vara en icke-tom sträng."
+            )
+        stations.append(
+            Station(name.strip(), short_name.strip(), mac.strip(), callback.strip())
+        )
+
+    names = [station.name.casefold() for station in stations]
+    short_names = [station.short_name.casefold() for station in stations]
+    if len(names) != len(set(names)) or len(short_names) != len(set(short_names)):
+        raise RuntimeError(
+            f"Stationsnamn och kortnamn måste vara unika i {config_path}."
+        )
+    return tuple(stations)
 
 
 def build_request_url(
@@ -169,8 +217,6 @@ def fetch_station_history(
     application_key: str,
     api_key: str,
 ) -> None:
-    mac = required_environment(station.mac_env)
-    callback = os.environ.get(station.callback_env, DEFAULT_CALLBACK)
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     for chunk_start, chunk_end in iter_chunks(start, end, cycle_type):
@@ -186,11 +232,11 @@ def fetch_station_history(
         url = build_request_url(
             application_key=application_key,
             api_key=api_key,
-            mac=mac,
+            mac=station.mac,
             start=chunk_start,
             end=chunk_end,
             cycle_type=cycle_type,
-            callback=callback,
+            callback=station.callback,
         )
         response_text = fetch_response(url)
         save_raw_response(raw_path, response_text)
@@ -291,19 +337,23 @@ def write_station_outputs(station_dir: Path, station_name: str) -> None:
     print(f"Skrev {len(records)} mätpunkter -> {long_csv_path}")
 
 
-def select_stations(query: str | None) -> tuple[Station, ...]:
+def select_stations(
+    query: str | None, stations: tuple[Station, ...]
+) -> tuple[Station, ...]:
     if query is None:
-        return STATIONS
+        return stations
 
-    normalized_query = query.casefold()
+    normalized_query = query.strip().casefold()
+    if not normalized_query:
+        raise ValueError("Stationsökningen får inte vara tom.")
     matches = tuple(
         station
-        for station in STATIONS
+        for station in stations
         if normalized_query in station.name.casefold()
         or normalized_query in station.short_name.casefold()
     )
     if not matches:
-        available = ", ".join(station.short_name for station in STATIONS)
+        available = ", ".join(station.short_name for station in stations)
         raise ValueError(
             f"Ingen station matchar {query!r}. Tillgängliga kortnamn: {available}."
         )
@@ -316,9 +366,10 @@ def select_stations(query: str | None) -> tuple[Station, ...]:
     return matches
 
 
-def process_station_outputs(output_dir: Path, station_query: str | None) -> None:
-    stations = select_stations(station_query)
-    for station in stations:
+def process_station_outputs(
+    output_dir: Path, station_query: str | None, stations: tuple[Station, ...]
+) -> None:
+    for station in select_stations(station_query, stations):
         print(f"Bearbetar stationen {station.name} ...")
         station_dir = output_dir / station.name
         write_station_outputs(station_dir, station.name)
@@ -335,7 +386,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     commands = parser.add_subparsers(dest="command", required=True)
 
     fetch_parser = commands.add_parser(
-        "fetch", help="Hämta data och bygg stationernas exportfiler."
+        "fetch", help="Hämta rådata till JSON-filer."
     )
     fetch_parser.add_argument(
         "start_date", help="YYYY-MM-DD eller YYYY-MM-DD HH:MM:SS"
@@ -346,8 +397,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     fetch_parser.add_argument("cycle_type", choices=CHUNK_DAYS)
     fetch_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
     fetch_parser.add_argument(
+        "--config",
+        default=DEFAULT_STATION_CONFIG,
+        help=f"Stationskonfiguration i JSON (standard: {DEFAULT_STATION_CONFIG}).",
+    )
+    fetch_parser.add_argument(
         "--station",
-        help="Hämta bara en station; kortnamn: easyweather eller gw3000.",
+        help="Hämta bara en station; använd kortnamn eller en del av namnet.",
     )
 
     process_parser = commands.add_parser(
@@ -355,8 +411,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     process_parser.add_argument("output_dir", nargs="?", default="ecowitt_data")
     process_parser.add_argument(
+        "--config",
+        default=DEFAULT_STATION_CONFIG,
+        help=f"Stationskonfiguration i JSON (standard: {DEFAULT_STATION_CONFIG}).",
+    )
+    process_parser.add_argument(
         "--station",
-        help="Bearbeta bara en station; kortnamn: easyweather eller gw3000.",
+        help="Bearbeta bara en station; använd kortnamn eller en del av namnet.",
     )
     return parser.parse_args(argv)
 
@@ -364,8 +425,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        stations = load_stations(Path(args.config))
         if args.command == "process":
-            process_station_outputs(Path(args.output_dir), args.station)
+            process_station_outputs(
+                Path(args.output_dir), args.station, stations
+            )
             return 0
 
         start = parse_datetime(args.start_date)
@@ -378,7 +442,7 @@ def main() -> int:
         api_key = required_environment("ECOWITT_API_KEY")
         output_dir = Path(args.output_dir)
 
-        for station in select_stations(args.station):
+        for station in select_stations(args.station, stations):
             print(f"Bearbetar stationen {station.name} ...")
             station_dir = output_dir / station.name
             fetch_station_history(
@@ -390,7 +454,6 @@ def main() -> int:
                 application_key,
                 api_key,
             )
-            write_station_outputs(station_dir, station.name)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Fel: {exc}", file=sys.stderr)
         return 1

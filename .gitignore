@@ -1,4 +1,5 @@
 .env
+stations.json
 .venv/
 data/
 __pycache__/

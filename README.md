@@ -11,28 +11,40 @@ requirements evolve).
 
 ## Setup
 
-1. Create two API keys under ecowitt.net → account icon → User Profile /
-   Private Center → API Keys, and find your station's MAC address there or
-   in WSView Plus.
-2. Copy `.env.example` to `.env` and fill in your own
-   `ECOWITT_APPLICATION_KEY`, `ECOWITT_API_KEY`,
-   `ECOWITT_EASYWEATHERPRO_4F447C_MAC`, and
-   `ECOWITT_GW3000A_WIFI1573_MAC`.
-   `.env` is gitignored — credentials are never committed.
-3. Before running any script, export the values from `.env`:
-   `set -a; source .env; set +a`
-4. Install [uv](https://docs.astral.sh/uv/) if it is not already installed.
+1. Create an Application Key and an API Key under ecowitt.net → account icon
+   → User Profile / Private Center → API Keys.
+2. Copy `.env.example` to `.env` and fill in `ECOWITT_APPLICATION_KEY` and
+   `ECOWITT_API_KEY`. `.env` is gitignored, so credentials are not committed.
+3. Copy `stations.example.json` to `stations.json`. For each station, set its
+   `name` (used for the output folder), `short_name` (used on the CLI), and
+   `mac` (found in the Ecowitt account or WSView Plus). Adjust `call_back` if
+   that station needs different API callback groups. `stations.json` is
+   gitignored because it contains your station identifiers.
+4. In each new terminal session, load and export the API keys once:
+
+   ```bash
+   set -a; source .env; set +a
+   ```
+
+   Keep using that terminal for fetch commands; repeat this step in a new
+   terminal session.
+5. Install [uv](https://docs.astral.sh/uv/) if it is not already installed.
    `uv` creates and manages the project environment and installs the
    dependencies from `pyproject.toml` automatically on first run.
 
 ## Usage
 
-To fetch both stations into separate folders, use:
+### Step 1: download raw data
+
+After loading `.env` in this terminal session as shown above, fetch both
+stations into separate folders:
 
 ```bash
-set -a; source .env; set +a
 uv run python fetch_stations.py 2026-05-01 2026-07-31 5min
 ```
+
+The default configuration file is `stations.json`. To use a file at another
+path, add `--config path/to/stations.json`.
 
 Dates may be given as `YYYY-MM-DD` (the full day is included) or as
 `"YYYY-MM-DD HH:MM:SS"` for a specific time range.
@@ -48,18 +60,24 @@ uv run python fetch_stations.py 2026-05-01 2026-07-31 5min --station gw3000
 If the text matches both stations or neither, the command reports the problem
 instead of selecting one.
 
-To rebuild the CSV and wide JSON exports from downloaded raw files, without
-calling the API, run:
+### Step 2: build the CSV and JSON exports
+
+**This step is required after downloading if the CSV and wide JSON files
+should include the downloaded data.** Fetch only saves raw JSON; until you run
+`process`, the CSV and wide JSON remain unchanged.
+
+Build or refresh the exports for GW3000 with:
 
 ```bash
 uv run python fetch_stations.py process data --station gw3000
 ```
 
 This regenerates both the long CSV and wide JSON from that station's `raw/`
-files. Any manual edits to the generated CSV will be overwritten; edit the raw
-JSON if you want those changes preserved when processing again. Omit
-`--station gw3000` to process both stations. The same station matching rules
-apply to fetching and processing.
+files, including all raw chunks saved for the station. Omit `--station gw3000`
+to process all configured stations. Processing reads `stations.json` to map
+station names to their output folders; it does not use the MAC addresses or
+API keys. Any manual edits to the generated CSV or wide JSON are overwritten
+when processing runs; edit the raw JSON if you want a correction to persist.
 
 ### File creation and manual edits
 
@@ -71,27 +89,29 @@ this order:
    response and are the source used to rebuild the exports. When fetching
    again, an existing raw chunk is skipped rather than downloaded again.
 2. **Long CSV** — `ecowitt_GW3000A-WIFI1573_long.csv`, with one row per
-   timestamp and metric (`timestamp,metric,value`). Raw JSON files are read,
-   flattened, and sorted by timestamp to create this file.
+   timestamp and metric (`timestamp,metric,value`). Run `process` to read,
+   flatten, and sort all raw JSON files into this file.
 3. **Wide JSON** — `ecowitt_GW3000A-WIFI1573_wide.json`, with one row per
-   timestamp and a separate column for each metric. It is built from the long
-   CSV; API `-` placeholders become missing values (`null`) here.
+   timestamp and a separate column for each metric. The same `process`
+   command builds it from the long CSV; API `-` placeholders become missing
+   values (`null`) here.
 
-The same sequence applies to `EasyWeatherPro-4F447C`. Fetching data writes
-new raw chunks first, then rebuilds the long CSV and wide JSON from all raw
-chunks in that station's directory. The `process` command skips the API step
-and rebuilds the two derived files from the raw JSON files already there.
+The same sequence applies to every station in `stations.json`. Fetch and
+process are independent commands: fetch downloads raw chunks only, while
+`process` skips the API step and rebuilds the derived files from raw JSON
+already saved.
 
 For a manual correction that should survive reprocessing, edit the relevant
 raw JSON and then run `process`. Editing the generated long CSV or wide JSON
 directly is useful for a one-off analysis, but those edits are replaced the
 next time the exports are rebuilt.
 
-### Notebook: daily temperature range
+### Step 3: analyze the processed data
 
 Open [g3000_daily_temperature.ipynb](g3000_daily_temperature.ipynb) in VS Code
-and select the `ecowitt` (`.venv`) Python kernel. The notebook plots daily
-minimum and maximum outdoor temperatures from the G3000 wide JSON file.
+and select the `ecowitt` (`.venv`) Python kernel. It reads the processed wide
+JSON and plots daily minimum and maximum outdoor temperatures.
+
 Notebook support is included in the uv development dependencies; if needed,
 sync the environment with `uv sync --group dev`.
 
@@ -108,15 +128,15 @@ in the terminal when finished.
 
 ### Call the history API directly with curl
 
-After loading `.env`, choose the station's MAC variable and send a request.
-This example fetches one day of 5-minute data from the G3000:
+After loading `.env`, copy the station's MAC from `stations.json` into the
+request. This example fetches one day of 5-minute data from the G3000:
 
 ```bash
 curl --silent --show-error --get \
   "https://api.ecowitt.net/api/v3/device/history" \
   --data-urlencode "application_key=${ECOWITT_APPLICATION_KEY}" \
   --data-urlencode "api_key=${ECOWITT_API_KEY}" \
-  --data-urlencode "mac=${ECOWITT_GW3000A_WIFI1573_MAC}" \
+  --data-urlencode "mac=AA:BB:CC:DD:EE:FF" \
   --data-urlencode "start_date=2026-10-16 00:00:00" \
   --data-urlencode "end_date=2026-10-16 23:59:59" \
   --data-urlencode "cycle_type=5min" \
@@ -127,20 +147,19 @@ curl --silent --show-error --get \
   --data-urlencode "rainfall_unitid=12"
 ```
 
-For the other station, replace the `mac` value with
-`${ECOWITT_EASYWEATHERPRO_4F447C_MAC}`. `--data-urlencode` safely encodes
-spaces and commas in the query parameters. The API returns JSON; check
-`code` for `0` to confirm success.
+Replace the example MAC with the `mac` value for `gw3000` in `stations.json`;
+use the other station's MAC for that station instead. `--data-urlencode`
+safely encodes spaces and commas in the query parameters. The API returns
+JSON; check `code` for `0` to confirm success.
 
-This writes independent raw JSON, long CSV, and wide JSON files under
-`ecowitt_data/EasyWeatherPro-4F447C/` and
-`ecowitt_data/GW3000A-WIFI1573/`. The wide JSON files are
-`ecowitt_EasyWeatherPro-4F447C_wide.json` and
-`ecowitt_GW3000A-WIFI1573_wide.json`. Set
-`ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` and/or
-`ECOWITT_GW3000A_WIFI1573_CALL_BACK` in `.env` if the stations need different
-API callback groups. Run `uv run python fetch_stations.py --help` for CLI
-options. See [docs/description.md](docs/description.md) for details.
+The Python `fetch` command writes raw JSON under a station-specific folder,
+for example `ecowitt_data/GW3000A-WIFI1573/raw/`. Run the separate `process`
+command to create the long CSV and wide JSON files, such as
+`ecowitt_GW3000A-WIFI1573_wide.json`. The station names, short names, MAC
+addresses, and callback groups are read from `stations.json`. Add another
+object to its `stations` list to configure another station. Run
+`uv run python fetch_stations.py --help` for CLI options.
+See [docs/description.md](docs/description.md) for details.
 
 Run the focused tests with `uv run python -m unittest discover -s tests`.
 

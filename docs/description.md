@@ -25,8 +25,11 @@ The Cloud API requires three values in every call:
 
 Both keys are created under ecowitt.net → account icon → User Profile /
 Private Center → API Keys (an Application Key + an API Key, separate
-values). The two stations use the same API keys but each has its own MAC
-address.
+values). The stations use the same API keys but each has its own MAC address.
+Station names, short names, MAC addresses, and callback groups are configured
+in the local `stations.json` file (created by copying
+`stations.example.json`). Keep API keys in `.env`; do not put them in the
+station configuration.
 
 ## API endpoint and parameters
 
@@ -64,11 +67,9 @@ outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure
 - Extra channel sensors (e.g. a future roof-mounted wind sensor) will
   likely fall under the already-existing `wind` group and shouldn't
   require any change.
-- The two-station runner supports separate optional
-  `ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` and
-  `ECOWITT_GW3000A_WIFI1573_CALL_BACK` settings. If unset, both stations use
-  the groups listed above. Only request groups supported by the relevant
-  station and its connected sensors.
+- Each station can have its own `call_back` value in `stations.json`. If
+  omitted, the groups listed above are used. Only request groups supported by
+  the relevant station and its connected sensors.
 
 ### cycle_type: resolution, history depth, and max span per call
 
@@ -116,38 +117,42 @@ abort and show `msg`.
 
 ## Pipeline
 
-`fetch_stations.py` performs the fetch and both data-shaping steps in one
-command. It keeps raw JSON as the durable source, then writes long CSV and
-wide JSON outputs. Charts and analysis remain outside the pipeline and can
-be done separately in pandas/Jupyter.
+`fetch_stations.py` supports separate fetch and process commands. Fetch keeps
+the raw API JSON as the durable source; process writes the long CSV and wide
+JSON from those saved files. Charts and analysis remain outside the pipeline
+and can be done separately in pandas/Jupyter.
 
 ### Fetching multiple stations separately
 
-`fetch_stations.py` runs the full pipeline once per station. For example:
+`fetch_stations.py fetch` downloads raw data for each configured station. For
+example:
 
 ```bash
 set -a; source .env; set +a
 uv run python fetch_stations.py 2026-10-16 2026-10-17 5min data
 ```
 
-It uses
-`ECOWITT_EASYWEATHERPRO_4F447C_MAC` for `EasyWeatherPro-4F447C` and
-`ECOWITT_GW3000A_WIFI1573_MAC` for `GW3000A-WIFI1573`, and writes each
-station's raw JSON, long CSV, and wide JSON under separate subfolders (by
-default `ecowitt_data/EasyWeatherPro-4F447C/` and
-`ecowitt_data/GW3000A-WIFI1573/`). This prevents same-date raw files from
-colliding and keeps identical metric names from different stations out of the
-same output.
+It reads station configuration from `stations.json` and writes each station's
+raw JSON under a folder named by its `name` (for example
+`data/EasyWeatherPro-4F447C/raw/`). This prevents same-date raw files from
+colliding. Add another entry to the JSON `stations` list to configure another
+device.
 
 The command accepts a date range and `cycle_type`, plus an optional output
-directory. Callback groups may be set independently
-with `ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` (EasyWeatherPro-4F447C) and
-`ECOWITT_GW3000A_WIFI1573_CALL_BACK` (GW3000A-WIFI1573); if omitted, each
-uses the default groups listed above. Load `.env` with exported variables
-before running it (`set -a; source .env; set +a`). Run it with
+directory. Callback groups may be configured independently in each station's
+`call_back` field; if omitted, each uses the default groups listed above.
+Load `.env` with exported API key variables before fetching (`set -a; source
+.env; set +a`). Run it with
 `uv run python fetch_stations.py ...`.
 Dates can be passed as `YYYY-MM-DD`, which means midnight through 23:59:59
 for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
+
+### Step 2: process saved raw files
+
+Run `uv run python fetch_stations.py process data` to build the long CSV and
+wide JSON exports for all configured stations, or add `--station gw3000` to
+process only a selected station. This step makes no API calls and can be
+rerun after editing the raw JSON files.
 
 ### Step 1 (Python): fetch raw data
 
