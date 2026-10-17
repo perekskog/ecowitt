@@ -121,7 +121,17 @@ def load_stations(config_path: Path) -> tuple[Station, ...]:
         ):
             raise RuntimeError(
                 f"Ogiltigt stationsnamn {name!r} i {config_path}; "
-                "namnet används som katalognamn."
+                "namnet får inte innehålla sökvägsavgränsare."
+            )
+        if (
+            Path(short_name).name != short_name
+            or "/" in short_name
+            or "\\" in short_name
+            or short_name in {".", ".."}
+        ):
+            raise RuntimeError(
+                f"Ogiltigt kortnamn {short_name!r} i {config_path}; "
+                "kortnamnet används i sökvägar och filnamn."
             )
         if not isinstance(callback, str) or not callback.strip():
             raise RuntimeError(
@@ -287,10 +297,10 @@ def flatten_raw_files(raw_dir: Path) -> list[tuple[float, str, Any]]:
     return records
 
 
-def write_station_outputs(station_dir: Path, station_name: str) -> None:
+def write_station_outputs(station_dir: Path, station_short_name: str) -> None:
     records = flatten_raw_files(station_dir / "raw")
-    long_csv_path = station_dir / f"ecowitt_{station_name}_long.csv"
-    wide_json_path = station_dir / f"ecowitt_{station_name}_wide.json"
+    long_csv_path = station_dir / f"{station_short_name}_long.csv"
+    wide_json_path = station_dir / f"{station_short_name}_wide.json"
 
     with long_csv_path.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
@@ -370,9 +380,9 @@ def process_station_outputs(
     output_dir: Path, station_query: str | None, stations: tuple[Station, ...]
 ) -> None:
     for station in select_stations(station_query, stations):
-        print(f"Bearbetar stationen {station.name} ...")
-        station_dir = output_dir / station.name
-        write_station_outputs(station_dir, station.name)
+        print(f"Bearbetar stationen {station.short_name} ...")
+        station_dir = output_dir / station.short_name
+        write_station_outputs(station_dir, station.short_name)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -443,8 +453,8 @@ def main() -> int:
         output_dir = Path(args.output_dir)
 
         for station in select_stations(args.station, stations):
-            print(f"Bearbetar stationen {station.name} ...")
-            station_dir = output_dir / station.name
+            print(f"Bearbetar stationen {station.short_name} ...")
+            station_dir = output_dir / station.short_name
             fetch_station_history(
                 station,
                 start,

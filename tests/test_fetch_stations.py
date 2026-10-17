@@ -191,8 +191,8 @@ class FlatteningTests(unittest.TestCase):
 
             write_station_outputs(station_dir, "test-station")
 
-            long_csv = station_dir / "ecowitt_test-station_long.csv"
-            wide_json = station_dir / "ecowitt_test-station_wide.json"
+            long_csv = station_dir / "test-station_long.csv"
+            wide_json = station_dir / "test-station_wide.json"
             self.assertIn("outdoor_temperature", long_csv.read_text(encoding="utf-8"))
             rows = json.loads(wide_json.read_text(encoding="utf-8"))
             self.assertEqual(rows[0]["outdoor_temperature"], 12.1)
@@ -243,8 +243,8 @@ class CliTests(unittest.TestCase):
         process_station_outputs(Path("data"), "gw3000", stations)
 
         write_outputs.assert_called_once_with(
-            Path("data/GW3000A-WIFI1573"),
-            "GW3000A-WIFI1573",
+            Path("data/gw3000"),
+            "gw3000",
         )
 
     def test_station_selection_accepts_case_insensitive_partial_name(self):

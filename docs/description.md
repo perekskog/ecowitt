@@ -133,10 +133,9 @@ uv run python fetch_stations.py 2026-10-16 2026-10-17 5min data
 ```
 
 It reads station configuration from `stations.json` and writes each station's
-raw JSON under a folder named by its `name` (for example
-`data/EasyWeatherPro-4F447C/raw/`). This prevents same-date raw files from
-colliding. Add another entry to the JSON `stations` list to configure another
-device.
+raw JSON under a folder named by its `short_name` (for example
+`data/easyweather/raw/`). This prevents same-date raw files from colliding.
+Add another entry to the JSON `stations` list to configure another device.
 
 The command accepts a date range and `cycle_type`, plus an optional output
 directory. Callback groups may be configured independently in each station's
@@ -149,10 +148,12 @@ for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
 
 ### Step 2: process saved raw files
 
-Run `uv run python fetch_stations.py process data` to build the long CSV and
-wide JSON exports for all configured stations, or add `--station gw3000` to
-process only a selected station. This step makes no API calls and can be
-rerun after editing the raw JSON files.
+Run `uv run python fetch_stations.py process data` to build the
+`<short_name>_long.csv` and `<short_name>_wide.json` exports for all configured
+stations, or add `--station gw3000` to process only a selected station. The
+files are stored in the matching short-name folder, for example
+`data/gw3000/gw3000_wide.json`. This step makes no API calls and can be rerun
+after editing the raw JSON files.
 
 ### Step 1 (Python): fetch raw data
 

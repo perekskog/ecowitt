@@ -16,10 +16,11 @@ requirements evolve).
 2. Copy `.env.example` to `.env` and fill in `ECOWITT_APPLICATION_KEY` and
    `ECOWITT_API_KEY`. `.env` is gitignored, so credentials are not committed.
 3. Copy `stations.example.json` to `stations.json`. For each station, set its
-   `name` (used for the output folder), `short_name` (used on the CLI), and
-   `mac` (found in the Ecowitt account or WSView Plus). Adjust `call_back` if
-   that station needs different API callback groups. `stations.json` is
-   gitignored because it contains your station identifiers.
+   `name` (descriptive label), `short_name` (used for its folder, output
+   filenames, and CLI selection), and `mac` (found in the Ecowitt account or
+   WSView Plus). Adjust `call_back` if that station needs different API
+   callback groups. `stations.json` is gitignored because it contains your
+   station identifiers.
 4. In each new terminal session, load and export the API keys once:
 
    ```bash
@@ -85,13 +86,13 @@ Each station has its own directory. The pipeline creates or updates files in
 this order:
 
 1. **Raw API JSON** — one file per requested time chunk, for example
-   `data/GW3000A-WIFI1573/raw/5min_2026-09-10.json`. These contain the API
-   response and are the source used to rebuild the exports. When fetching
-   again, an existing raw chunk is skipped rather than downloaded again.
-2. **Long CSV** — `ecowitt_GW3000A-WIFI1573_long.csv`, with one row per
+   `data/gw3000/raw/5min_2026-09-10.json`. These contain the API response and
+   are the source used to rebuild the exports. When fetching again, an
+   existing raw chunk is skipped rather than downloaded again.
+2. **Long CSV** — `gw3000_long.csv`, with one row per
    timestamp and metric (`timestamp,metric,value`). Run `process` to read,
    flatten, and sort all raw JSON files into this file.
-3. **Wide JSON** — `ecowitt_GW3000A-WIFI1573_wide.json`, with one row per
+3. **Wide JSON** — `gw3000_wide.json`, with one row per
    timestamp and a separate column for each metric. The same `process`
    command builds it from the long CSV; API `-` placeholders become missing
    values (`null`) here.
@@ -153,11 +154,11 @@ safely encodes spaces and commas in the query parameters. The API returns
 JSON; check `code` for `0` to confirm success.
 
 The Python `fetch` command writes raw JSON under a station-specific folder,
-for example `ecowitt_data/GW3000A-WIFI1573/raw/`. Run the separate `process`
-command to create the long CSV and wide JSON files, such as
-`ecowitt_GW3000A-WIFI1573_wide.json`. The station names, short names, MAC
-addresses, and callback groups are read from `stations.json`. Add another
-object to its `stations` list to configure another station. Run
+for example `ecowitt_data/gw3000/raw/`. Run the separate `process` command to
+create the long CSV and wide JSON files, such as `gw3000_long.csv` and
+`gw3000_wide.json`. The station names, short names, MAC addresses, and
+callback groups are read from `stations.json`. Add another object to its
+`stations` list to configure another station. Run
 `uv run python fetch_stations.py --help` for CLI options.
 See [docs/description.md](docs/description.md) for details.
 
