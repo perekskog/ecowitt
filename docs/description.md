@@ -64,10 +64,11 @@ outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure
 - Extra channel sensors (e.g. a future roof-mounted wind sensor) will
   likely fall under the already-existing `wind` group and shouldn't
   require any change.
-- The two-station runner supports separate optional `ECOWITT_WS90_CALL_BACK`
-  and `ECOWITT_G3000_CALL_BACK` settings. If unset, both stations use the
-  groups listed above. Only request groups supported by the relevant station
-  and its connected sensors.
+- The two-station runner supports separate optional
+  `ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` and
+  `ECOWITT_GW3000A_WIFI1573_CALL_BACK` settings. If unset, both stations use
+  the groups listed above. Only request groups supported by the relevant
+  station and its connected sensors.
 
 ### cycle_type: resolution, history depth, and max span per call
 
@@ -122,17 +123,22 @@ possible separate step 4 later, which would just read step 3's output.
 ### Fetching multiple stations separately
 
 `fetch_stations.sh` runs the three pipeline steps once per station. It uses
-`ECOWITT_MAC` for the WS90 and `ECOWITT_G3000_MAC` for the G3000, and writes
-each station's raw JSON, long CSV, and wide JSON under separate subfolders
-(by default `ecowitt_data/ws90/` and `ecowitt_data/g3000/`). This prevents
-same-date raw files from colliding and keeps identical metric names from
-different stations out of the same output.
+`ECOWITT_EASYWEATHERPRO_4F447C_MAC` for `EasyWeatherPro-4F447C` and
+`ECOWITT_GW3000A_WIFI1573_MAC` for `GW3000A-WIFI1573`, and writes each
+station's raw JSON, long CSV, and wide JSON under separate subfolders (by
+default `ecowitt_data/EasyWeatherPro-4F447C/` and
+`ecowitt_data/GW3000A-WIFI1573/`). This prevents same-date raw files from
+colliding and keeps identical metric names from different stations out of the
+same output.
 
 The wrapper accepts the same date range and `cycle_type` as `fetch_raw.sh`,
 plus an optional output directory. Callback groups may be set independently
-with `ECOWITT_WS90_CALL_BACK` and `ECOWITT_G3000_CALL_BACK`; if omitted, each
+with `ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` (EasyWeatherPro-4F447C) and
+`ECOWITT_GW3000A_WIFI1573_CALL_BACK` (GW3000A-WIFI1573); if omitted, each
 uses the default groups listed above. Load `.env` with exported variables
 before running it (`set -a; source .env; set +a`).
+Dates can be passed as `YYYY-MM-DD`, which means midnight through 23:59:59
+for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
 
 ### Step 1 (bash + curl + jq): fetch raw data
 
@@ -161,7 +167,7 @@ before running it (`set -a; source .env; set +a`).
   existing structure). Can also be opened directly in Excel and pivoted
   manually (Insert → PivotTable) as an independent path, without Python.
 
-### Step 3 (Python + pandas): long CSV → wide working format (JSON)
+### Step 3 (Python + pandas, managed with uv): long CSV → wide working format (JSON)
 
 - Input: the long CSV file from step 2.
 - Pivots with `pivot_table(index="timestamp", columns="metric",
@@ -178,6 +184,10 @@ before running it (`set -a; source .env; set +a`).
 - This is meant as the **starting point for further analysis**
   (Jupyter/pandas) — nothing more should really need to happen in the
   pipeline itself from here on.
+- `pandas` is declared in `pyproject.toml`; run the conversion with
+  `uv run python widen-json.py input.csv output.json`. The station runner
+  invokes it through `uv run` and uv creates/synchronizes the project
+  environment automatically.
 
 ## Already-built prototypes (starting point)
 

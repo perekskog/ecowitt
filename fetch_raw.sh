@@ -4,7 +4,8 @@
 # — det är hela poängen, rådatan ska gå att bygga om ifrån senare.
 #
 # Användning:
-#   bash 1_hamta_raw.sh "2026-05-01 00:00:00" "2026-07-31 23:59:59" 5min [rawdir]
+#   bash fetch_raw.sh 2026-05-01 2026-07-31 5min [rawdir]
+#   bash fetch_raw.sh "2026-05-01 00:00:00" "2026-07-31 23:59:59" 5min [rawdir]
 
 set -euo pipefail
 
@@ -44,12 +45,19 @@ esac
 
 mkdir -p "$RAWDIR"
 
-to_epoch() { jq -rn --arg d "$1" '$d | strptime("%Y-%m-%d %H:%M:%S") | mktime'; }
+to_epoch() {
+  local date="$1"
+  local default_time="$2"
+  if [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    date="$date $default_time"
+  fi
+  jq -rn --arg d "$date" '$d | strptime("%Y-%m-%d %H:%M:%S") | mktime'
+}
 to_datestr() { jq -rn --argjson e "$1" '$e | gmtime | strftime("%Y-%m-%d %H:%M:%S")'; }
 to_filedate() { jq -rn --argjson e "$1" '$e | gmtime | strftime("%Y-%m-%d")'; }
 
-START_EPOCH=$(to_epoch "$START_DATE")
-END_EPOCH=$(to_epoch "$END_DATE")
+START_EPOCH=$(to_epoch "$START_DATE" "00:00:00")
+END_EPOCH=$(to_epoch "$END_DATE" "23:59:59")
 CHUNK_SECS=$((CHUNK_DAYS * 86400))
 
 cur=$START_EPOCH

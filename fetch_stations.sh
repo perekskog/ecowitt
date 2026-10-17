@@ -3,7 +3,8 @@
 # mätvärden aldrig blandas ihop.
 #
 # Användning:
-#   bash fetch_stations.sh <start_date> <end_date> <cycle_type> [utkatalog]
+#   ./fetch_stations.sh 2026-10-16 2026-10-16 5min [utkatalog]
+#   ./fetch_stations.sh "2026-10-16 06:00:00" "2026-10-16 18:00:00" 5min [utkatalog]
 
 set -euo pipefail
 
@@ -20,8 +21,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 : "${ECOWITT_APPLICATION_KEY:?Sätt ECOWITT_APPLICATION_KEY (t.ex. via 'set -a; source .env; set +a')}"
 : "${ECOWITT_API_KEY:?Sätt ECOWITT_API_KEY (t.ex. via 'set -a; source .env; set +a')}"
-: "${ECOWITT_MAC:?Sätt ECOWITT_MAC till WS90-stationens MAC-adress}"
-: "${ECOWITT_G3000_MAC:?Sätt ECOWITT_G3000_MAC till G3000-stationens MAC-adress}"
+: "${ECOWITT_EASYWEATHERPRO_4F447C_MAC:?Sätt ECOWITT_EASYWEATHERPRO_4F447C_MAC till EasyWeatherPro-4F447C:s MAC-adress}"
+: "${ECOWITT_GW3000A_WIFI1573_MAC:?Sätt ECOWITT_GW3000A_WIFI1573_MAC till GW3000A-WIFI1573:s MAC-adress}"
 
 DEFAULT_CALL_BACK="outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure"
 
@@ -38,15 +39,15 @@ process_station() {
 
   bash "$SCRIPT_DIR/flatten_csv.sh" \
     "$station_dir/raw" "$station_dir/ecowitt_${name}_long.csv"
-  python3 "$SCRIPT_DIR/widen-json.py" \
+  uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/widen-json.py" \
     "$station_dir/ecowitt_${name}_long.csv" \
     "$station_dir/ecowitt_${name}_wide.json"
 }
 
 mkdir -p "$OUTDIR"
-process_station "ws90" "$ECOWITT_MAC" \
-  "${ECOWITT_WS90_CALL_BACK:-$DEFAULT_CALL_BACK}"
-process_station "g3000" "$ECOWITT_G3000_MAC" \
-  "${ECOWITT_G3000_CALL_BACK:-$DEFAULT_CALL_BACK}"
+process_station "EasyWeatherPro-4F447C" "$ECOWITT_EASYWEATHERPRO_4F447C_MAC" \
+  "${ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK:-$DEFAULT_CALL_BACK}"
+process_station "GW3000A-WIFI1573" "$ECOWITT_GW3000A_WIFI1573_MAC" \
+  "${ECOWITT_GW3000A_WIFI1573_CALL_BACK:-$DEFAULT_CALL_BACK}"
 
-echo "Klart! Separata stationsfiler finns i $OUTDIR/ws90/ och $OUTDIR/g3000/" >&2
+echo "Klart! Separata stationsfiler finns i $OUTDIR/EasyWeatherPro-4F447C/ och $OUTDIR/GW3000A-WIFI1573/" >&2
