@@ -1,0 +1,148 @@
+import json
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+
+from fetch_stations import (
+    build_request_url,
+    flatten_raw_files,
+    iter_chunks,
+    parse_datetime,
+    save_raw_response,
+    write_station_outputs,
+)
+
+
+class DateParsingTests(unittest.TestCase):
+    def test_date_only_start_and_end_cover_the_full_day(self):
+        start = parse_datetime("2026-10-16")
+        end = parse_datetime("2026-10-16", end_of_day=True)
+
+        self.assertEqual(start, datetime(2026, 10, 16, 0, 0, 0))
+        self.assertEqual(end, datetime(2026, 10, 16, 23, 59, 59))
+
+    def test_explicit_times_are_preserved(self):
+        value = parse_datetime("2026-10-16 12:34:56", end_of_day=True)
+
+        self.assertEqual(value, datetime(2026, 10, 16, 12, 34, 56))
+
+    def test_invalid_date_is_reported(self):
+        with self.assertRaises(ValueError):
+            parse_datetime("2026-02-30")
+
+
+class ChunkingTests(unittest.TestCase):
+    def test_five_minute_requests_are_split_at_one_day(self):
+        start = datetime(2026, 10, 16)
+        end = datetime(2026, 10, 17, 0, 0, 0)
+
+        chunks = list(iter_chunks(start, end, "5min"))
+
+        self.assertEqual(
+            chunks,
+            [
+                (datetime(2026, 10, 16), datetime(2026, 10, 16, 23, 59, 59)),
+                (datetime(2026, 10, 17), datetime(2026, 10, 17)),
+            ],
+        )
+
+    def test_end_before_start_is_rejected(self):
+        with self.assertRaises(ValueError):
+            list(iter_chunks(datetime(2026, 10, 17), datetime(2026, 10, 16), "5min"))
+
+
+class ApiHelpersTests(unittest.TestCase):
+    def test_request_url_contains_api_parameters(self):
+        url = build_request_url(
+            application_key="app key",
+            api_key="api key",
+            mac="AA:BB",
+            start=datetime(2026, 10, 16),
+            end=datetime(2026, 10, 16, 23, 59, 59),
+            cycle_type="5min",
+            callback="outdoor,soil_ch1",
+        )
+
+        self.assertIn("application_key=app+key", url)
+        self.assertIn("call_back=outdoor%2Csoil_ch1", url)
+        self.assertIn("start_date=2026-10-16+00%3A00%3A00", url)
+
+    def test_saves_successful_raw_response(self):
+        response_text = '{"code":0,"data":{"outdoor":{}}}'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            raw_path = Path(temp_dir) / "raw.json"
+
+            parsed = save_raw_response(raw_path, response_text)
+
+            self.assertEqual(parsed["code"], 0)
+            self.assertEqual(raw_path.read_text(encoding="utf-8"), response_text)
+
+    def test_does_not_save_api_error_response(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            raw_path = Path(temp_dir) / "raw.json"
+
+            with self.assertRaisesRegex(RuntimeError, "API rapporterade fel"):
+                save_raw_response(raw_path, '{"code":1,"msg":"bad request"}')
+            self.assertFalse(raw_path.exists())
+
+
+class FlatteningTests(unittest.TestCase):
+    def test_flattens_metrics_and_sorts_by_timestamp(self):
+        payload = {
+            "code": 0,
+            "data": {
+                "outdoor": {
+                    "temperature": {
+                        "list": {"1792195500": "12.3", "1792195200": "12.1"}
+                    }
+                },
+                "soil_ch1": {
+                    "soilmoisture": {"list": {"1792195200": "42"}}
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "raw.json").write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+
+            records = flatten_raw_files(Path(temp_dir))
+
+        self.assertEqual(
+            records,
+            [
+                (1792195200.0, "outdoor_temperature", "12.1"),
+                (1792195200.0, "soil_ch1_soilmoisture", "42"),
+                (1792195500.0, "outdoor_temperature", "12.3"),
+            ],
+        )
+
+    def test_writes_long_csv_and_wide_json(self):
+        payload = {
+            "code": 0,
+            "data": {
+                "outdoor": {
+                    "temperature": {"list": {"1792195200": "12.1"}}
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            station_dir = Path(temp_dir) / "station"
+            raw_dir = station_dir / "raw"
+            raw_dir.mkdir(parents=True)
+            (raw_dir / "5min_2026-10-16.json").write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+
+            write_station_outputs(station_dir, "test-station")
+
+            long_csv = station_dir / "ecowitt_test-station_long.csv"
+            wide_json = station_dir / "ecowitt_test-station_wide.json"
+            self.assertIn("outdoor_temperature", long_csv.read_text(encoding="utf-8"))
+            row = json.loads(wide_json.read_text(encoding="utf-8"))[0]
+            self.assertEqual(row["outdoor_temperature"], 12.1)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -114,15 +114,23 @@ Nested by group and metric:
 Timestamps in `list` are unix seconds, UTC. `code != 0` means an error —
 abort and show `msg`.
 
-## Pipeline: three steps
+## Pipeline
 
-Design principle: each step does one thing. Charts/visualization are
-**explicitly out of scope** for these three steps — envisioned as a
-possible separate step 4 later, which would just read step 3's output.
+`fetch_stations.py` performs the fetch and both data-shaping steps in one
+command. It keeps raw JSON as the durable source, then writes long CSV and
+wide JSON outputs. Charts and analysis remain outside the pipeline and can
+be done separately in pandas/Jupyter.
 
 ### Fetching multiple stations separately
 
-`fetch_stations.sh` runs the three pipeline steps once per station. It uses
+`fetch_stations.py` runs the full pipeline once per station. For example:
+
+```bash
+set -a; source .env; set +a
+uv run python fetch_stations.py 2026-10-16 2026-10-17 5min data
+```
+
+It uses
 `ECOWITT_EASYWEATHERPRO_4F447C_MAC` for `EasyWeatherPro-4F447C` and
 `ECOWITT_GW3000A_WIFI1573_MAC` for `GW3000A-WIFI1573`, and writes each
 station's raw JSON, long CSV, and wide JSON under separate subfolders (by
@@ -131,18 +139,20 @@ default `ecowitt_data/EasyWeatherPro-4F447C/` and
 colliding and keeps identical metric names from different stations out of the
 same output.
 
-The wrapper accepts the same date range and `cycle_type` as `fetch_raw.sh`,
-plus an optional output directory. Callback groups may be set independently
+The command accepts a date range and `cycle_type`, plus an optional output
+directory. Callback groups may be set independently
 with `ECOWITT_EASYWEATHERPRO_4F447C_CALL_BACK` (EasyWeatherPro-4F447C) and
 `ECOWITT_GW3000A_WIFI1573_CALL_BACK` (GW3000A-WIFI1573); if omitted, each
 uses the default groups listed above. Load `.env` with exported variables
-before running it (`set -a; source .env; set +a`).
+before running it (`set -a; source .env; set +a`). Run it with
+`uv run python fetch_stations.py ...`.
 Dates can be passed as `YYYY-MM-DD`, which means midnight through 23:59:59
 for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
 
-### Step 1 (bash + curl + jq): fetch raw data
+### Step 1 (Python): fetch raw data
 
-- Input: `start_date`, `end_date`, `cycle_type` as command-line arguments.
+- Input: `start_date`, `end_date`, `cycle_type`, and optional output
+  directory as command-line arguments.
 - Loops in chunks according to the max-span table above (e.g. one call per
   day for `5min`), with a pause between calls (rate limit: 1 call/sec with
   an API key).
@@ -155,7 +165,7 @@ for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
   source — if the reshaping logic later turns out to need changes,
   everything can still be rebuilt from scratch.
 
-### Step 2 (bash + jq): raw JSON → long CSV format
+### Step 2 (Python): raw JSON → long CSV format
 
 - Input: the `raw/` folder (all `.json` files).
 - Flattens to **long format**: one row per `(timestamp, metric, value)`,
@@ -184,28 +194,22 @@ for that day, or as `YYYY-MM-DD HH:MM:SS` for explicit times.
 - This is meant as the **starting point for further analysis**
   (Jupyter/pandas) — nothing more should really need to happen in the
   pipeline itself from here on.
-- `pandas` is declared in `pyproject.toml`; run the conversion with
-  `uv run python widen-json.py input.csv output.json`. The station runner
-  invokes it through `uv run` and uv creates/synchronizes the project
-  environment automatically.
+- `pandas` is declared in `pyproject.toml`; uv creates/synchronizes the
+  project environment automatically.
 
-## Already-built prototypes (starting point)
+## Historical prototype
 
-Three working script files already exist as a first implementation and
-can be used as a base to build on / clean up:
-
-- `fetch_raw.sh`
-- `flatten_csv.sh`
-- `widen-json.py`
+The original fetch/flatten/convert shell scripts have been replaced by
+`fetch_stations.py`. `ecowitt_historik.sh` remains only as a historical
+prototype.
 
 ## Known open points / future work (not part of the current task)
 
-- Add `soil_ch1`–`soil_ch4` to `call_back` once the soil sensors arrive,
-  plus decide whether old `raw/` files should be re-fetched.
-- Possibly build in a warning in step 1 if an existing raw file is
-  missing a group that's now being requested (instead of silently
-  skipping it).
-- Charts/visualization (separate step 4, reads step 3's output).
+- Decide separately whether previously fetched raw files need to be
+  refreshed after callback settings change.
+- Possibly warn if an existing raw file is missing a group that's now
+  being requested instead of silently skipping it.
+- Jupyter-based analysis and visualization (a separate follow-up).
 - Possible future direction: have the HP2564 send data directly to Azure
   (Blob Storage + Azure Functions, the same stack already used in another
   ongoing project) — either via the console's possible "Custom Server"
