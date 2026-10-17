@@ -27,8 +27,9 @@ APPLICATION_KEY="$ECOWITT_APPLICATION_KEY"
 API_KEY="$ECOWITT_API_KEY"
 MAC="$ECOWITT_MAC"
 
-# soil_ch1-4 medvetet uteslutna tills vidare (läggs till när jordsensorerna är på plats)
-CALL_BACK="outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure"
+# Standardgrupper för WS90. Kan ändras per hämtning, exempelvis för en
+# station med andra sensorer.
+CALL_BACK="${ECOWITT_CALL_BACK:-outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure}"
 
 case "$CYCLE_TYPE" in
   5min)  CHUNK_DAYS=1 ;;

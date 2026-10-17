@@ -25,7 +25,8 @@ The Cloud API requires three values in every call:
 
 Both keys are created under ecowitt.net → account icon → User Profile /
 Private Center → API Keys (an Application Key + an API Key, separate
-values).
+values). The two stations use the same API keys but each has its own MAC
+address.
 
 ## API endpoint and parameters
 
@@ -63,6 +64,10 @@ outdoor,indoor,solar_and_uvi,rainfall_piezo,wind,pressure
 - Extra channel sensors (e.g. a future roof-mounted wind sensor) will
   likely fall under the already-existing `wind` group and shouldn't
   require any change.
+- The two-station runner supports separate optional `ECOWITT_WS90_CALL_BACK`
+  and `ECOWITT_G3000_CALL_BACK` settings. If unset, both stations use the
+  groups listed above. Only request groups supported by the relevant station
+  and its connected sensors.
 
 ### cycle_type: resolution, history depth, and max span per call
 
@@ -113,6 +118,21 @@ abort and show `msg`.
 Design principle: each step does one thing. Charts/visualization are
 **explicitly out of scope** for these three steps — envisioned as a
 possible separate step 4 later, which would just read step 3's output.
+
+### Fetching multiple stations separately
+
+`fetch_stations.sh` runs the three pipeline steps once per station. It uses
+`ECOWITT_MAC` for the WS90 and `ECOWITT_G3000_MAC` for the G3000, and writes
+each station's raw JSON, long CSV, and wide JSON under separate subfolders
+(by default `ecowitt_data/ws90/` and `ecowitt_data/g3000/`). This prevents
+same-date raw files from colliding and keeps identical metric names from
+different stations out of the same output.
+
+The wrapper accepts the same date range and `cycle_type` as `fetch_raw.sh`,
+plus an optional output directory. Callback groups may be set independently
+with `ECOWITT_WS90_CALL_BACK` and `ECOWITT_G3000_CALL_BACK`; if omitted, each
+uses the default groups listed above. Load `.env` with exported variables
+before running it (`set -a; source .env; set +a`).
 
 ### Step 1 (bash + curl + jq): fetch raw data
 
